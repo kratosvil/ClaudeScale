@@ -1,6 +1,37 @@
-# Demo Application - nginx
+# Demo Application - nginx con stub_status habilitado
 # This is the app that ClaudeScale will scale
 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: claudescale
+  labels:
+    app: demo-app
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+        }
+
+        # Endpoint requerido por nginx-prometheus-exporter
+        location /stub_status {
+            stub_status on;
+            allow 127.0.0.1;
+            deny all;
+        }
+
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,15 +42,13 @@ metadata:
     component: web
     managed-by: claudescale
 spec:
-  # Start with 2 replicas
   replicas: 2
 
-  # Rolling update strategy (zero downtime)
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1        # Can create 1 extra pod during update
-      maxUnavailable: 0  # Never go below desired count
+      maxSurge: 1
+      maxUnavailable: 0
 
   selector:
     matchLabels:
@@ -30,12 +59,12 @@ spec:
       labels:
         app: demo-app
       annotations:
-        # Tell Prometheus to scrape this pod
         prometheus.io/scrape: "true"
-        prometheus.io/port: "80"
+        prometheus.io/port: "9113"
         prometheus.io/path: "/metrics"
     spec:
       containers:
+      # Contenedor principal: nginx
       - name: nginx
         image: nginx:alpine
 
@@ -44,17 +73,19 @@ spec:
           containerPort: 80
           protocol: TCP
 
-        # Resource requests and limits
-        # This is what Prometheus will monitor
         resources:
           requests:
-            cpu: 100m      # Minimum: 0.1 CPU cores
-            memory: 128Mi  # Minimum: 128 MB
+            cpu: 100m
+            memory: 128Mi
           limits:
-            cpu: 200m      # Maximum: 0.2 CPU cores
-            memory: 256Mi  # Maximum: 256 MB
+            cpu: 200m
+            memory: 256Mi
 
-        # Health checks
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+
         livenessProbe:
           httpGet:
             path: /
@@ -68,8 +99,29 @@ spec:
             port: 80
           initialDelaySeconds: 5
           periodSeconds: 5
+
+      # Contenedor sidecar: nginx-prometheus-exporter
+      - name: nginx-exporter
+        image: nginx/nginx-prometheus-exporter:latest
+        args:
+          - --nginx.scrape-uri=http://localhost:80/stub_status
+        ports:
+        - name: metrics
+          containerPort: 9113
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi
+
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
 ---
-# Service to access the demo app
 apiVersion: v1
 kind: Service
 metadata:
@@ -77,6 +129,9 @@ metadata:
   namespace: claudescale
   labels:
     app: demo-app
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9113"
 spec:
   type: ClusterIP
   selector:
@@ -85,4 +140,8 @@ spec:
   - name: http
     port: 80
     targetPort: 80
+    protocol: TCP
+  - name: metrics
+    port: 9113
+    targetPort: 9113
     protocol: TCP
