@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: claudescale
+  labels:
+    app: claudescale
+    environment: development
