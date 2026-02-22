@@ -1,0 +1,59 @@
+# ServiceAccount: Identity for ClaudeScale MCP server
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: claudescale-sa
+  namespace: claudescale
+  labels:
+    app: claudescale
+    component: mcp-server
+
+---
+# Role: Permissions that ClaudeScale needs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claudescale-scaler-role
+  namespace: claudescale
+  labels:
+    app: claudescale
+rules:
+# Permission to read deployments (for get_current_state)
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+
+# Permission to read deployment scale (for get_current_state)
+- apiGroups: ["apps"]
+  resources: ["deployments/scale"]
+  verbs: ["get"]
+
+# Permission to update deployment scale (for scale_deployment)
+- apiGroups: ["apps"]
+  resources: ["deployments/scale"]
+  verbs: ["update", "patch"]
+
+# Permission to read pods (for verification)
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding: Connects ServiceAccount to Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claudescale-scaler-binding
+  namespace: claudescale
+  labels:
+    app: claudescale
+subjects:
+# WHO: The ServiceAccount
+- kind: ServiceAccount
+  name: claudescale-sa
+  namespace: claudescale
+roleRef:
+  # CAN DO: The Role permissions
+  kind: Role
+  name: claudescale-scaler-role
+  apiGroup: rbac.authorization.k8s.io
