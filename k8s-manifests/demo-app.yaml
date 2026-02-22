@@ -1,0 +1,88 @@
+# Demo Application - nginx
+# This is the app that ClaudeScale will scale
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: claudescale
+  labels:
+    app: demo-app
+    component: web
+    managed-by: claudescale
+spec:
+  # Start with 2 replicas
+  replicas: 2
+
+  # Rolling update strategy (zero downtime)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Can create 1 extra pod during update
+      maxUnavailable: 0  # Never go below desired count
+
+  selector:
+    matchLabels:
+      app: demo-app
+
+  template:
+    metadata:
+      labels:
+        app: demo-app
+      annotations:
+        # Tell Prometheus to scrape this pod
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+
+        # Resource requests and limits
+        # This is what Prometheus will monitor
+        resources:
+          requests:
+            cpu: 100m      # Minimum: 0.1 CPU cores
+            memory: 128Mi  # Minimum: 128 MB
+          limits:
+            cpu: 200m      # Maximum: 0.2 CPU cores
+            memory: 256Mi  # Maximum: 256 MB
+
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+# Service to access the demo app
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app
+  namespace: claudescale
+  labels:
+    app: demo-app
+spec:
+  type: ClusterIP
+  selector:
+    app: demo-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
