@@ -1,0 +1,14 @@
+# Grafana Dashboard Provider Configuration
+# This tells Grafana where to find dashboard JSON files
+
+apiVersion: 1
+
+providers:
+  - name: 'ClaudeScale Dashboards'
+    orgId: 1
+    folder: 'ClaudeScale'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
