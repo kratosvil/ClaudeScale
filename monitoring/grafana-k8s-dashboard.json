@@ -1,0 +1,75 @@
+{
+  "dashboard": {
+    "title": "ClaudeScale - Kubernetes Overview",
+    "tags": ["kubernetes", "claudescale"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "CPU Usage by Pod",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total{namespace=\"claudescale\"}[5m])",
+            "legendFormat": "{{pod}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "label": "CPU"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Memory Usage by Pod",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "container_memory_usage_bytes{namespace=\"claudescale\"} / 1024 / 1024",
+            "legendFormat": "{{pod}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "mbytes", "label": "Memory"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Pod Count by Deployment",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "count by (pod) (container_cpu_usage_seconds_total{namespace=\"claudescale\"})"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Network Traffic",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(container_network_receive_bytes_total{namespace=\"claudescale\"}[5m])",
+            "legendFormat": "{{pod}} - RX"
+          },
+          {
+            "expr": "rate(container_network_transmit_bytes_total{namespace=\"claudescale\"}[5m])",
+            "legendFormat": "{{pod}} - TX"
+          }
+        ],
+        "yaxes": [
+          {"format": "Bps", "label": "Network"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}
