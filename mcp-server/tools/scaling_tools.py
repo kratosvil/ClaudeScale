@@ -5,6 +5,19 @@ These tools will be available to Claude for intelligent scaling decisions
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from guardrails import (
+    check_cooldown,
+    record_scale_action,
+    save_snapshot,
+    get_last_snapshot,
+    validate_scaledown,
+    audit_log,
+    get_recent_audit,
+)
+
 
 async def get_current_state(k8s_client, namespace: str = "claudescale") -> Dict[str, Any]:
     """
@@ -107,22 +120,27 @@ async def scale_deployment(
     deployment: str,
     replicas: int,
     namespace: str = "claudescale",
-    reason: Optional[str] = None
+    reason: Optional[str] = None,
+    cpu_utilization_pct: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Tool 3: Scale a deployment
 
-    This tool allows Claude to:
-    - Increase replica count (scale up)
-    - Decrease replica count (scale down)
-    - Execute scaling decisions
+    Guardrails enforced:
+    - Hard replica limits: min=2, max=5
+    - Cooldown between actions (90s up / 180s down)
+    - Scale-down requires explicit reason + CPU < 40%
+    - Scale-down limited to 1 replica per action
+    - State snapshot saved before every action (enables rollback)
+    - All actions written to audit log
 
     Args:
         k8s_client: Kubernetes client instance
         deployment: Deployment name
         replicas: Desired number of replicas
         namespace: Kubernetes namespace
-        reason: Why scaling is being performed (for audit trail)
+        reason: WHY scaling is being performed (mandatory for scale-down)
+        cpu_utilization_pct: Current CPU % — used by scale-down guard
 
     Returns:
         Dict with scaling result
@@ -136,22 +154,25 @@ async def scale_deployment(
         }
 
     current_replicas = current["replicas"]
-
     MIN_REPLICAS = 2
     MAX_REPLICAS = 5
 
+    # ── Hard limits ──────────────────────────────────────────────────────────
     if replicas < MIN_REPLICAS:
         return {
             "success": False,
-            "error": f"Cannot scale below minimum of {MIN_REPLICAS} replicas"
+            "error": f"Cannot scale below minimum of {MIN_REPLICAS} replicas. "
+                     f"ClaudeScale enforces minimum availability."
         }
 
     if replicas > MAX_REPLICAS:
         return {
             "success": False,
-            "error": f"Cannot scale above maximum of {MAX_REPLICAS} replicas"
+            "error": f"Cannot scale above maximum of {MAX_REPLICAS} replicas. "
+                     f"Adjust MAX_REPLICAS in .env to change this limit."
         }
 
+    # ── No-op ─────────────────────────────────────────────────────────────────
     if replicas == current_replicas:
         return {
             "success": True,
@@ -161,9 +182,50 @@ async def scale_deployment(
             "desired_replicas": replicas
         }
 
-    result = k8s_client.scale_deployment(deployment, replicas)
+    action_direction = "up" if replicas > current_replicas else "down"
 
-    return {
+    # ── Cooldown check ────────────────────────────────────────────────────────
+    cooldown = check_cooldown(action_direction)
+    if not cooldown["allowed"]:
+        audit_log("scale_blocked_cooldown", {
+            "deployment": deployment,
+            "requested_replicas": replicas,
+            "reason": cooldown["reason"]
+        })
+        return {
+            "success": False,
+            "error": cooldown["reason"],
+            "retry_in_seconds": cooldown.get("retry_in_seconds")
+        }
+
+    # ── Scale-down guard ──────────────────────────────────────────────────────
+    if action_direction == "down":
+        guard = validate_scaledown(
+            current_replicas=current_replicas,
+            desired_replicas=replicas,
+            cpu_utilization_pct=cpu_utilization_pct,
+            reason=reason
+        )
+        if not guard["allowed"]:
+            audit_log("scale_blocked_guard", {
+                "deployment": deployment,
+                "requested_replicas": replicas,
+                "reason": guard["reason"]
+            })
+            return {
+                "success": False,
+                "error": guard["reason"]
+            }
+
+    # ── Snapshot before action (enables rollback) ─────────────────────────────
+    state_snapshot = {"deployments": [{"name": deployment, "replicas": current_replicas}]}
+    save_snapshot(state_snapshot)
+
+    # ── Execute ───────────────────────────────────────────────────────────────
+    result = k8s_client.scale_deployment(deployment, replicas)
+    record_scale_action(action_direction)
+
+    response = {
         "success": True,
         "action": "scaled_up" if replicas > current_replicas else "scaled_down",
         "namespace": namespace,
@@ -173,8 +235,21 @@ async def scale_deployment(
         "change": replicas - current_replicas,
         "reason": reason or "No reason provided",
         "timestamp": datetime.now().isoformat(),
+        "rollback_info": f"To rollback: scale '{deployment}' back to {current_replicas} replicas",
         "result": result
     }
+
+    # ── Audit log ─────────────────────────────────────────────────────────────
+    audit_log("scale_executed", {
+        "deployment": deployment,
+        "namespace": namespace,
+        "previous_replicas": current_replicas,
+        "new_replicas": replicas,
+        "action": response["action"],
+        "reason": reason or "No reason provided"
+    })
+
+    return response
 
 
 async def generate_report(
@@ -189,6 +264,7 @@ async def generate_report(
     - Create audit trail
     - Explain scaling decisions
     - Document system state
+    - Show recent audit history
 
     Args:
         state: Current state from get_current_state()
@@ -242,6 +318,7 @@ async def generate_report(
 **Change:** {scaling_action['change']:+d}
 **Reason:** {scaling_action['reason']}
 **Timestamp:** {scaling_action['timestamp']}
+**Rollback:** {scaling_action.get('rollback_info', 'N/A')}
 """
 
     report += "\n## Recommendation\n\n"
@@ -254,5 +331,19 @@ async def generate_report(
         report += "OPTIMIZE: CPU usage is low (<30%). Consider scaling down to save resources."
     else:
         report += "STABLE: System is operating within normal parameters."
+
+    # ── Append recent audit history ───────────────────────────────────────────
+    recent = get_recent_audit(10)
+    if recent:
+        report += "\n\n## Recent Audit Log (last 10 events)\n\n"
+        report += "| Timestamp | Event | Deployment | Action | Reason |\n"
+        report += "|-----------|-------|------------|--------|--------|\n"
+        for entry in recent:
+            ts = entry.get("timestamp", "")[:19]
+            event = entry.get("event", "")
+            dep = entry.get("deployment", "-")
+            action = entry.get("action", "-")
+            reason = entry.get("reason", "-")[:50]
+            report += f"| {ts} | {event} | {dep} | {action} | {reason} |\n"
 
     return report
