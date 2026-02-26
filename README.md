@@ -1,13 +1,19 @@
 # ClaudeScale
 
-**AI-Powered Kubernetes Autoscaler using Claude AI**
+<div align="center">
 
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![Claude AI](https://img.shields.io/badge/Claude-AI-orange)](https://www.anthropic.com/)
 [![MCP](https://img.shields.io/badge/MCP-Protocol-green)](https://modelcontextprotocol.io/)
 
-> **Intelligent Kubernetes autoscaling that thinks like a human SRE**
+**Intelligent Kubernetes autoscaling that thinks like a human SRE**
+
+<br/>
+
+![ClaudeScale Demo](claudescale_hd.gif)
+
+</div>
 
 ClaudeScale uses Claude AI to make intelligent scaling decisions based on metrics, patterns, and context - not just simple CPU thresholds.
 
