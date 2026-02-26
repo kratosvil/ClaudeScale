@@ -109,7 +109,7 @@ Expected output:
 ## Running the Full MCP Server
 
 ```bash
-cd /home/kratosvil/Desarrollo/ClaudeScale
+cd ~/Desarrollo/ClaudeScale
 source venv/bin/activate
 cd mcp-server && python3 server.py
 ```

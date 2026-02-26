@@ -134,12 +134,12 @@ Añadir la entrada `claudescale` al objeto `mcpServers` (sin sobreescribir entra
 {
   "mcpServers": {
     "claudescale": {
-      "command": "/home/kratosvil/Desarrollo/ClaudeScale/venv/bin/python",
+      "command": "~/Desarrollo/ClaudeScale/venv/bin/python",
       "args": [
-        "/home/kratosvil/Desarrollo/ClaudeScale/mcp-server/server.py"
+        "~/Desarrollo/ClaudeScale/mcp-server/server.py"
       ],
       "env": {
-        "PYTHONPATH": "/home/kratosvil/Desarrollo/ClaudeScale/mcp-server",
+        "PYTHONPATH": "~/Desarrollo/ClaudeScale/mcp-server",
         "KUBERNETES_NAMESPACE": "claudescale",
         "PROMETHEUS_LOCAL_URL": "http://localhost:9090",
         "KUBERNETES_IN_CLUSTER": "false"
