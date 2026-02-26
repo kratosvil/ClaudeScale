@@ -49,3 +49,6 @@ Thumbs.db
 # Temporary files
 /tmp/
 *.tmp
+
+# Grafana dashboards locales (no subir al repo)
+monitoring/claudescale-final-working.json
